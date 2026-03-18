@@ -2,7 +2,7 @@
 
 ## What This Project Is About
 
-Table Tempo is a local-first board game timer built for one shared screen at the table. Each player gets a configurable main time bank, and once that runs out, they switch to a short configurable overtime window on every turn. The goal is to keep games moving without needing accounts, servers, or multiple devices.
+Table Tempo is a board game timer built for one shared screen at the table. Each player gets a configurable main time bank, and once that runs out, they switch to a short configurable overtime window on every turn. The goal is to keep games moving without needing accounts, servers, or multiple devices.
 
 ## How To Run This Project
 
