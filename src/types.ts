@@ -2,6 +2,14 @@ export type TimeoutMode = "alert";
 
 export type GamePhase = "setup" | "running" | "paused" | "finished";
 
+export type ThemePreference = "system" | "light" | "dark";
+
+export type ResolvedTheme = "light" | "dark";
+
+export interface AppearancePreferences {
+  themePreference: ThemePreference;
+}
+
 export interface PlayerConfig {
   id: string;
   name: string;
@@ -99,6 +107,7 @@ export interface PersistedAppState {
   config: AppConfig;
   presets: SavedPreset[];
   game: GameState;
+  appearance?: AppearancePreferences;
 }
 
 export interface WakeLockState {

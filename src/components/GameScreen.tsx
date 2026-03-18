@@ -1,15 +1,25 @@
 import { useEffect } from "react";
 import type { CSSProperties } from "react";
-import type { AppConfig, GameState, WakeLockState } from "../types";
-import { formatClock, formatDuration } from "../lib/time";
 import { getActivePlayer, getVisibleClockMs } from "../lib/game";
 import { getPlayerTheme } from "../lib/playerTheme";
+import { formatClock, formatSessionClock } from "../lib/time";
+import type {
+  AppConfig,
+  GameState,
+  ResolvedTheme,
+  ThemePreference,
+  WakeLockState
+} from "../types";
+import ThemeToggle from "./ThemeToggle";
 
 interface GameScreenProps {
   config: AppConfig;
   game: GameState;
+  resolvedTheme: ResolvedTheme;
+  themePreference: ThemePreference;
   wakeLock: WakeLockState;
   nowEpoch: number;
+  onThemePreferenceChange(value: ThemePreference): void;
   onEndTurn(): void;
   onPauseToggle(): void;
   onUndo(): void;
@@ -36,11 +46,53 @@ function nextPlayerName(game: GameState): string {
   return "next player";
 }
 
+function getRoundNumber(game: GameState): number {
+  const activePlayer = getActivePlayer(game);
+
+  if (activePlayer) {
+    return activePlayer.stats.completedTurns + 1;
+  }
+
+  return Math.max(1, ...game.players.map((player) => player.stats.completedTurns));
+}
+
+function getStateLabel(
+  isActive: boolean,
+  isEliminated: boolean,
+  inOvertime: boolean,
+  expired: boolean
+): string {
+  if (isEliminated) {
+    return "Out";
+  }
+
+  if (expired && isActive) {
+    return "Timeout";
+  }
+
+  if (inOvertime) {
+    return "Overtime";
+  }
+
+  return isActive ? "Active" : "Waiting";
+}
+
+function getClockSubtitle(isEliminated: boolean, inOvertime: boolean): string {
+  if (isEliminated) {
+    return "out of rotation";
+  }
+
+  return inOvertime ? "per-turn clock" : "main bank";
+}
+
 export default function GameScreen({
   config,
   game,
+  resolvedTheme,
+  themePreference,
   wakeLock,
   nowEpoch,
+  onThemePreferenceChange,
   onEndTurn,
   onPauseToggle,
   onUndo,
@@ -57,15 +109,23 @@ export default function GameScreen({
   const expired = Boolean(
     activePlayer && activePlayer.remainingMainMs === 0 && activePlayer.remainingOvertimeMs === 0
   );
-  const activeTheme = getPlayerTheme(activePlayer?.color, expired ? "expired" : "normal");
-  const heroStyle: CSSProperties = {
-    ["--hero-bg-color" as string]: activeTheme.heroBackgroundColor,
-    ["--hero-bg-image" as string]: activeTheme.heroBackgroundImage,
-    ["--hero-text-color" as string]: activeTheme.heroTextColor,
-    borderColor: activeTheme.accentColor
-  };
-  const heroMutedTextStyle: CSSProperties = {
-    color: activeTheme.heroMutedTextColor
+  const activeTheme = getPlayerTheme(
+    activePlayer?.color,
+    resolvedTheme,
+    expired ? "expired" : inOvertime ? "overtime" : "normal"
+  );
+  const activeClockMax = inOvertime ? config.overtimeSeconds * 1000 : config.mainTimeSeconds * 1000;
+  const progressRatio =
+    activeClockMax > 0 ? Math.max(0, Math.min(1, activeClock / activeClockMax)) : 0;
+  const activeStyle: CSSProperties = {
+    ["--accent-color" as string]: activeTheme.accentColor,
+    ["--accent-tint" as string]: activeTheme.accentTint,
+    ["--accent-tint-strong" as string]: activeTheme.accentTintStrong,
+    ["--accent-text" as string]: activeTheme.accentTextColor,
+    ["--accent-rail" as string]: activeTheme.railColor,
+    ["--accent-rail-track" as string]: activeTheme.railTrackColor,
+    ["--accent-border" as string]: activeTheme.borderColor,
+    ["--progress-ratio" as string]: `${progressRatio}`
   };
 
   useEffect(() => {
@@ -109,114 +169,195 @@ export default function GameScreen({
   }, [game.phase, onEndTurn, onPauseToggle, onSkipPlayer, onUndo]);
 
   return (
-    <main className="app-shell game-shell">
-      <section className="active-hero" style={heroStyle}>
-        <div>
-          <p className="eyebrow" style={heroMutedTextStyle}>
-            {game.phase === "paused" ? "Paused" : `Turn ${game.turnNumber}`}
+    <main className="app-shell page-shell game-page">
+      <header className="screen-masthead game-masthead">
+        <div className="masthead-copy">
+          <p className="brand-line">
+            <span className="brand-name">Table Tempo</span>
           </p>
-          <h1>{activePlayer?.name ?? "No active player"}</h1>
-          <p className="hero-copy" style={heroMutedTextStyle}>
-            {expired
-              ? "Overtime expired. The table decides what happens next."
-              : inOvertime
-                ? "Overtime is live for this turn."
-                : "Main time bank is running."}
-          </p>
+          <div className="pill-strip">
+            <span className="utility-chip">Round {getRoundNumber(game)}</span>
+            <span className="utility-chip">Turn {game.turnNumber}</span>
+            <span className="utility-chip">{formatSessionClock(sessionDuration)} elapsed</span>
+          </div>
         </div>
 
-        <div className="active-clock-block">
-          <span className="active-clock-label" style={heroMutedTextStyle}>
-            {inOvertime ? "Overtime" : "Main bank"}
-          </span>
-          <strong>{formatClock(activeClock)}</strong>
-          <small style={heroMutedTextStyle}>{formatDuration(sessionDuration)} elapsed in session</small>
+        <div className="masthead-tools game-tools">
+          <ThemeToggle value={themePreference} onChange={onThemePreferenceChange} />
         </div>
-      </section>
+      </header>
 
-      {wakeLock.message ? <p className="wake-lock-banner">{wakeLock.message}</p> : null}
+      <section className="game-layout">
+        <div className="game-main-column">
+          <section
+            className={`panel active-clock-card ${game.phase === "paused" ? "is-paused" : ""} ${inOvertime ? "is-overtime" : ""} ${expired ? "is-expired" : ""}`}
+            style={activeStyle}
+          >
+            <div className="active-card-header">
+              <p className="section-kicker">{game.phase === "paused" ? "Paused" : "Thinking now"}</p>
+            </div>
 
-      <section className="control-bar">
-        <button className="primary-action turn-pass" type="button" onClick={onEndTurn} disabled={game.phase !== "running"}>
-          Pass to {nextPlayerName(game)}
-        </button>
-        <button type="button" onClick={onPauseToggle}>
-          {game.phase === "paused" ? "Resume" : "Pause"}
-        </button>
-        <button type="button" onClick={onUndo} disabled={game.history.length === 0}>
-          Undo
-        </button>
-        <button type="button" onClick={onSkipPlayer} disabled={game.phase !== "running"}>
-          Eliminate active
-        </button>
-        <button type="button" onClick={onFinish}>
-          End session
-        </button>
-        <button type="button" className="ghost-button" onClick={onReset}>
-          Reset to setup
-        </button>
-      </section>
+            <div className="active-player-line">
+              <span className={`active-player-dot ${game.phase === "running" ? "is-running" : ""}`} />
+              <h1>{activePlayer?.name ?? "No active player"}</h1>
+            </div>
 
-      <section className={`player-grid ${compactLayout ? "compact" : ""}`}>
-        {game.players.map((player) => {
-          const playerClock = getVisibleClockMs(player);
-          const playerExpired = player.remainingMainMs === 0 && player.remainingOvertimeMs === 0;
-          const playerInOvertime = player.remainingMainMs === 0;
+            <div className="active-mono">{formatClock(activeClock)}</div>
 
-          return (
-            <article
-              className={`player-card ${player.isActive ? "is-active" : ""} ${player.isEliminated ? "is-eliminated" : ""} ${playerExpired && player.isActive ? "is-expired" : ""}`}
-              key={player.id}
-              style={{ ["--player-accent" as string]: player.color }}
+            <div className="active-progress-meta">
+              <span>{formatClock(activeClock)} remaining</span>
+              <span>
+                {formatClock(activeClockMax)} {inOvertime ? "per-turn clock" : "main bank"}
+              </span>
+            </div>
+
+            <div className="active-progress-rail">
+              <div
+                className={`active-progress-fill ${game.phase === "running" ? "is-running" : ""} ${inOvertime ? "is-overtime" : ""}`}
+                style={{ width: `${progressRatio * 100}%` }}
+              />
+            </div>
+
+            <p className="active-status-copy">
+              {expired
+                ? "Overtime expired. Table Tempo stays in alert-only mode and lets the table decide the consequence."
+                : inOvertime
+                  ? "This player is on their per-turn overtime window. Pass quickly to keep the table moving."
+                  : "Main bank is still available for this player. Warnings will trigger at the configured thresholds."}
+            </p>
+
+            <button
+              className="pass-turn-button"
+              type="button"
+              onClick={onEndTurn}
+              disabled={game.phase !== "running"}
+              style={activeStyle}
             >
-              <div className="player-card-header">
-                <div>
-                  <span className="player-index">{player.name}</span>
-                  <h2>{player.isEliminated ? "Out" : player.isActive ? "Active" : "Waiting"}</h2>
-                </div>
-                <span className="player-badge">
-                  {playerInOvertime ? "OT" : formatClock(player.remainingMainMs)}
-                </span>
+              Pass turn to {nextPlayerName(game)}
+            </button>
+          </section>
+
+          <section className={`player-grid ${compactLayout ? "compact" : ""}`}>
+            {game.players.map((player) => {
+              const playerClock = getVisibleClockMs(player);
+              const playerExpired =
+                player.remainingMainMs === 0 && player.remainingOvertimeMs === 0;
+              const playerInOvertime = player.remainingMainMs === 0;
+              const averageTurnMs =
+                player.stats.completedTurns > 0
+                  ? player.stats.totalTurnMs / player.stats.completedTurns
+                  : 0;
+              const playerTheme = getPlayerTheme(
+                player.color,
+                resolvedTheme,
+                playerExpired && player.isActive ? "expired" : playerInOvertime ? "overtime" : "normal"
+              );
+              const playerStyle: CSSProperties = {
+                ["--accent-color" as string]: playerTheme.accentColor,
+                ["--accent-tint" as string]: playerTheme.accentTint,
+                ["--accent-tint-strong" as string]: playerTheme.accentTintStrong,
+                ["--accent-text" as string]: playerTheme.accentTextColor,
+                ["--accent-border" as string]: playerTheme.borderColor
+              };
+
+              return (
+                <article
+                  className={`panel player-tile ${player.isActive ? "is-active" : ""} ${player.isEliminated ? "is-eliminated" : ""}`}
+                  key={player.id}
+                  style={playerStyle}
+                >
+                  <div className="player-tile-header">
+                    <div className="player-tile-name">
+                      <span className="player-tile-dot" />
+                      <h2>{player.name}</h2>
+                    </div>
+                    <span className="state-pill">
+                      {getStateLabel(
+                        player.isActive,
+                        player.isEliminated,
+                        playerInOvertime,
+                        playerExpired
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="player-tile-clock">{formatClock(playerClock)}</div>
+                  <p className="player-tile-subcopy">
+                    {getClockSubtitle(player.isEliminated, playerInOvertime)}
+                  </p>
+
+                  <dl className="player-tile-stats">
+                    <div>
+                      <dt>Turns</dt>
+                      <dd>{player.stats.completedTurns}</dd>
+                    </div>
+                    <div>
+                      <dt>Longest</dt>
+                      <dd>{formatClock(player.stats.longestTurnMs)}</dd>
+                    </div>
+                    <div>
+                      <dt>Avg / turn</dt>
+                      <dd>{player.stats.completedTurns > 0 ? formatClock(averageTurnMs) : "—"}</dd>
+                    </div>
+                  </dl>
+                </article>
+              );
+            })}
+          </section>
+        </div>
+
+        <aside className="panel side-utility-panel">
+          <div className="side-panel-section">
+            <p className="section-kicker">Device</p>
+            <p className="device-note">
+              {wakeLock.message ??
+                (wakeLock.active
+                  ? "Wake Lock is active for this session."
+                  : "Wake Lock is available when the browser grants it.")}
+            </p>
+          </div>
+
+          <div className="side-panel-section">
+            <p className="section-kicker">Keyboard</p>
+            <div className="shortcut-list">
+              <div className="shortcut-row">
+                <span>Pass</span>
+                <kbd>Space</kbd>
               </div>
+              <div className="shortcut-row">
+                <span>Pause</span>
+                <kbd>P</kbd>
+              </div>
+              <div className="shortcut-row">
+                <span>Undo</span>
+                <kbd>U</kbd>
+              </div>
+              <div className="shortcut-row">
+                <span>Eliminate</span>
+                <kbd>S</kbd>
+              </div>
+            </div>
+          </div>
 
-              <div className="player-clock">{formatClock(playerClock)}</div>
-
-              <dl className="player-stats">
-                <div>
-                  <dt>Main left</dt>
-                  <dd>{formatClock(player.remainingMainMs)}</dd>
-                </div>
-                <div>
-                  <dt>Overtime</dt>
-                  <dd>{formatClock(player.remainingOvertimeMs)}</dd>
-                </div>
-                <div>
-                  <dt>Total think</dt>
-                  <dd>{formatDuration(player.stats.totalTurnMs + (player.isActive ? game.currentTurnElapsedMs : 0))}</dd>
-                </div>
-                <div>
-                  <dt>Longest turn</dt>
-                  <dd>{formatDuration(player.stats.longestTurnMs)}</dd>
-                </div>
-              </dl>
-
-              <p className="status-copy">
-                {player.isEliminated
-                  ? "Skipped in turn rotation."
-                  : playerExpired && player.isActive
-                    ? "Timer exhausted. Alert-only mode is active."
-                    : playerInOvertime
-                      ? `Warnings at ${config.warningSeconds.join(", ")} seconds.`
-                      : "Main bank still available."}
-              </p>
-            </article>
-          );
-        })}
+          <div className="side-action-column">
+            <button type="button" onClick={onSkipPlayer} disabled={game.phase !== "running"}>
+              Eliminate active
+            </button>
+            <button type="button" onClick={onPauseToggle}>
+              {game.phase === "paused" ? "Resume" : "Pause"}
+            </button>
+            <button type="button" onClick={onUndo} disabled={game.history.length === 0}>
+              Undo
+            </button>
+            <button type="button" className="danger-button" onClick={onFinish}>
+              End session
+            </button>
+            <button type="button" className="ghost-button" onClick={onReset}>
+              Reset to setup
+            </button>
+          </div>
+        </aside>
       </section>
-
-      <footer className="keyboard-hint">
-        Space or Enter passes the turn. P pauses. U undoes. S eliminates the active player.
-      </footer>
     </main>
   );
 }

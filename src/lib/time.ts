@@ -14,6 +14,22 @@ export function formatClock(totalMs: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+export function formatSessionClock(totalMs: number): string {
+  const safeMs = Math.max(0, totalMs);
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+  }
+
+  return `${Math.floor(totalSeconds / 60)}:${seconds.toString().padStart(2, "0")}`;
+}
+
 export function formatDuration(totalMs: number): string {
   const roundedSeconds = Math.max(0, Math.round(totalMs / 1000));
   const minutes = Math.floor(roundedSeconds / 60);

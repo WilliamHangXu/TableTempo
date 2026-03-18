@@ -6,6 +6,12 @@ import { useTicker } from "./hooks/useTicker";
 import { useWakeLock } from "./hooks/useWakeLock";
 import { triggerAlert } from "./lib/alerts";
 import {
+  getSystemResolvedTheme,
+  normalizeAppearance,
+  resolveThemePreference,
+  THEME_MEDIA_QUERY
+} from "./lib/appearance";
+import {
   createSetupGame,
   endTurn,
   finishGame,
@@ -29,11 +35,19 @@ import {
   resizePlayers
 } from "./lib/presets";
 import { loadPersistedState, savePersistedState } from "./lib/storage";
-import type { AppConfig, GameState, SavedPreset } from "./types";
+import type {
+  AppConfig,
+  AppearancePreferences,
+  GameState,
+  ResolvedTheme,
+  SavedPreset,
+  ThemePreference
+} from "./types";
 
 const BUILT_IN_PRESETS = buildBuiltInPresets();
 
 interface InitialState {
+  appearance: AppearancePreferences;
   config: AppConfig;
   presets: SavedPreset[];
   game: GameState;
@@ -45,6 +59,7 @@ function getInitialState(): InitialState {
 
   if (!persisted) {
     return {
+      appearance: normalizeAppearance(undefined),
       config: fallbackConfig,
       presets: [],
       game: createSetupGame(fallbackConfig)
@@ -63,6 +78,7 @@ function getInitialState(): InitialState {
     : createSetupGame(config);
 
   return {
+    appearance: normalizeAppearance(persisted.appearance),
     config,
     presets,
     game
@@ -77,9 +93,11 @@ export default function App() {
   }
 
   const initial = initialRef.current;
+  const [appearance, setAppearance] = useState<AppearancePreferences>(initial.appearance);
   const [config, setConfig] = useState<AppConfig>(initial.config);
   const [customPresets, setCustomPresets] = useState<SavedPreset[]>(initial.presets);
   const [game, setGame] = useState<GameState>(initial.game);
+  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => getSystemResolvedTheme());
   const tick = useTicker(game.phase === "running");
   const wakeLock = useWakeLock(game.phase === "running");
   const alertStateRef = useRef({
@@ -94,6 +112,10 @@ export default function App() {
   const activeExpired = Boolean(
     activePlayer && activePlayer.remainingMainMs === 0 && activePlayer.remainingOvertimeMs === 0
   );
+  const resolvedTheme = resolveThemePreference(
+    appearance.themePreference,
+    systemTheme === "dark"
+  );
   const persistMarker =
     game.phase === "running"
       ? Math.floor(tick.epoch / 1000)
@@ -105,12 +127,30 @@ export default function App() {
     setGame((current) => (current.phase === "setup" ? createSetupGame(normalized) : current));
   }
 
+  function updateThemePreference(themePreference: ThemePreference) {
+    setAppearance({ themePreference });
+  }
+
   function now() {
     return {
       perf: performance.now(),
       epoch: Date.now()
     };
   }
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(THEME_MEDIA_QUERY);
+    const handleChange = () => setSystemTheme(mediaQuery.matches ? "dark" : "light");
+
+    handleChange();
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+    document.documentElement.style.colorScheme = resolvedTheme;
+  }, [resolvedTheme]);
 
   useEffect(() => {
     const previous = alertStateRef.current;
@@ -161,16 +201,18 @@ export default function App() {
   useEffect(() => {
     const persistGame = serializeGameForStorage(game, config, tick.perf, tick.epoch);
     savePersistedState({
+      appearance,
       config,
       presets: customPresets,
       game: persistGame
     });
-  }, [config, customPresets, game, persistMarker]);
+  }, [appearance, config, customPresets, game, persistMarker]);
 
   useEffect(() => {
     const handleBeforeUnload = () => {
       const clock = now();
       savePersistedState({
+        appearance,
         config,
         presets: customPresets,
         game: serializeGameForStorage(game, config, clock.perf, clock.epoch)
@@ -179,7 +221,7 @@ export default function App() {
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [config, customPresets, game]);
+  }, [appearance, config, customPresets, game]);
 
   if (projectedGame.phase === "setup") {
     return (
@@ -187,6 +229,8 @@ export default function App() {
         config={config}
         builtInPresets={BUILT_IN_PRESETS}
         customPresets={customPresets}
+        themePreference={appearance.themePreference}
+        onThemePreferenceChange={updateThemePreference}
         onPlayerCountChange={(count) => updateConfig(resizePlayers(config, count))}
         onPlayerUpdate={(index, patch) => {
           const nextPlayers = config.players.map((player, playerIndex) =>
@@ -252,6 +296,9 @@ export default function App() {
       <SummaryScreen
         config={config}
         game={projectedGame}
+        resolvedTheme={resolvedTheme}
+        themePreference={appearance.themePreference}
+        onThemePreferenceChange={updateThemePreference}
         onPlayAgain={() => {
           const clock = now();
           setGame(startGame(config, clock.perf, clock.epoch));
@@ -265,8 +312,11 @@ export default function App() {
     <GameScreen
       config={config}
       game={projectedGame}
+      resolvedTheme={resolvedTheme}
+      themePreference={appearance.themePreference}
       wakeLock={wakeLock}
       nowEpoch={tick.epoch}
+      onThemePreferenceChange={updateThemePreference}
       onEndTurn={() => {
         const clock = now();
         setGame((current) => endTurn(current, config, clock.perf, clock.epoch));
