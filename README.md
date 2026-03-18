@@ -33,10 +33,11 @@ npm run dev
 http://localhost:5173
 ```
 
-
 ## Timer Functionality
 
 ### Setup And Configuration
+
+![Setup screen](./img/Setup.png)
 
 - Configure between `2` and `8` players.
 - Edit each player name.
@@ -65,6 +66,8 @@ http://localhost:5173
 
 ### In-Game Controls
 
+![Game screen](./img/Game.png)
+
 - Start a game from the setup screen.
 - Pass the turn to the next player.
 - Pause the timer.
@@ -76,7 +79,7 @@ http://localhost:5173
 
 ### On-Screen Information
 
-- A large active-player banner at the top of the game screen.
+- A large active-player clock card at the top of the game screen.
 - A live timer for the current player.
 - A player grid showing current state for everyone in the game.
 - Main time remaining for each player.
@@ -107,6 +110,8 @@ http://localhost:5173
 - Refreshing the page restores local data when available.
 
 ### Summary Screen
+
+![Summary screen](./img/Summary.png)
 
 - Shows overall session duration.
 - Shows the number of turns played.
