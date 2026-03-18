@@ -1,0 +1,17 @@
+{
+  "name": "Table Tempo",
+  "short_name": "Table Tempo",
+  "description": "A local-first board game timer with time banks and overtime.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6ead2",
+  "theme_color": "#13332c",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
